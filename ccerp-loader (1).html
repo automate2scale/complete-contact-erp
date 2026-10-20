@@ -1,0 +1,83 @@
+<!-- Complete Contact ERP loader (pinned). ONE GHL page, ONE Custom Code block.
+     Loads the landing page; when the URL ends in #scorecard it loads the
+     scorecard instead. Every call to action on the landing page goes to
+     #scorecard, so nothing leaves the page and there is no second GHL page.
+
+     data-page / data-scorecard MUST match the filenames in the repo exactly.
+     To publish a new version, change VERSION to the new commit id. -->
+<div id="cc-root"
+     data-page="campaign-landing-page.v2026-10-19"
+     data-scorecard="erp-fit-scorecard.v2026-10-15-B"></div>
+<script>
+(function () {
+  var VERSION = "main";   // ← replace with the commit id once you have it
+  var REPO = "automate2scale/complete-contact-erp";
+  var root = document.getElementById("cc-root");
+  var views = {};
+
+  function fileFor(name) {
+    return name === "scorecard" ? root.dataset.scorecard : root.dataset.page;
+  }
+
+  function inject(name, html) {
+    var box = document.createElement("div");
+    box.innerHTML = html;
+    root.appendChild(box);
+    views[name] = box;
+
+    box.querySelectorAll("script").forEach(function (old) {
+      var s = document.createElement("script");
+      for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+      s.text = old.text;
+      old.parentNode.replaceChild(s, old);
+    });
+
+    if (name === "landing") {
+      // every call to action switches view instead of leaving the page
+      box.querySelectorAll("a[data-cta]").forEach(function (a) {
+        a.setAttribute("href", "#scorecard");
+        a.removeAttribute("target");
+      });
+    } else {
+      // a way back, and no buttons pointing at URLs that do not exist yet
+      var back = document.createElement("div");
+      back.style.cssText = "max-width:800px;margin:0 auto;padding:18px 20px 0;font:600 13.5px/1.4 Inter,Arial,sans-serif";
+      back.innerHTML = '<a href="#landing" style="color:#0A6FAF;text-decoration:none">&larr; Back</a>';
+      box.insertBefore(back, box.firstChild);
+      setTimeout(function () {
+        function dead(el) { if (!el) return true; var h = el.getAttribute("href"); return !h || h === "#"; }
+        var t = box.querySelector("#ctaTrial"), d = box.querySelector("#ctaDemo");
+        if (t && dead(t)) t.style.display = "none";
+        if (d && dead(d)) d.style.display = "none";
+        var row = box.querySelector(".ctarow");
+        if (row && dead(t) && dead(d)) row.style.display = "none";
+      }, 0);
+    }
+  }
+
+  function show(name) {
+    Object.keys(views).forEach(function (k) { views[k].hidden = (k !== name); });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
+  var busy = {};
+  function route() {
+    var name = (location.hash || "").replace(/^#/, "") === "scorecard" ? "scorecard" : "landing";
+    if (views[name]) { show(name); return; }
+    if (busy[name]) return;
+    busy[name] = true;
+    fetch("https://cdn.jsdelivr.net/gh/" + REPO + "@" + VERSION + "/" + encodeURI(fileFor(name)) + ".html")
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (html) { inject(name, html); show(name); })
+      .catch(function () {
+        root.innerHTML = '<p style="padding:40px;text-align:center;font-family:sans-serif">' +
+          'Email Oscar at <a href="mailto:oscar@completecontact.net">oscar@completecontact.net</a> ' +
+          'and we will send your ERP Fit assessment across.</p>';
+      })
+      .then(function () { busy[name] = false; });
+  }
+
+  window.addEventListener("hashchange", route);
+  route();
+})();
+</script>
