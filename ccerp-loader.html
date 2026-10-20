@@ -1,0 +1,146 @@
+<!-- =================================================================
+     Complete Contact ERP — site loader
+     ONE snippet. Paste into ONE full-width Custom HTML / Code element
+     in GoHighLevel. Nothing else goes on the page.
+
+     Serves BOTH pages from GitHub:
+       landing page   →  the page as loaded
+       scorecard      →  when the URL ends in #scorecard
+
+     Every call to action on the landing page routes to the scorecard.
+     The repo must stay PUBLIC. Never put a token in client-side HTML.
+     ================================================================= -->
+
+<div id="ccerp-root">
+  <div id="ccerp-boot" style="font:15px/1.5 system-ui,-apple-system,Arial,sans-serif;padding:60px 20px;text-align:center;color:#667">
+    Loading&hellip;
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---- the two files in the repo. If you rename one, change it here. ---- */
+  var REPO  = "automate2scale/complete-contact-erp";
+  var BRANCH = "main";
+  var PAGES = {
+    landing:   "campaign-landing-page.v2026-10-19.html",
+    scorecard: "erp-fit-scorecard.v2026-10-15-B.html"
+  };
+
+  var root = document.getElementById("ccerp-root");
+  var boot = document.getElementById("ccerp-boot");
+  if (!root) return;
+
+  function sources(file) {
+    return [
+      "https://cdn.jsdelivr.net/gh/" + REPO + "@" + BRANCH + "/" + file,
+      "https://raw.githubusercontent.com/" + REPO + "/" + BRANCH + "/" + file
+    ];
+  }
+
+  function fetchFirst(urls, i) {
+    i = i || 0;
+    if (i >= urls.length) return Promise.reject(new Error("all sources failed"));
+    return fetch(urls[i], { cache: "no-cache" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .catch(function (e) {
+        if (window.console) console.warn("CCERP loader: " + urls[i] + " —", e.message);
+        return fetchFirst(urls, i + 1);
+      });
+  }
+
+  var views = {};   // name -> container element, built once and then reused
+
+  function build(name, html) {
+    var doc = new DOMParser().parseFromString(html, "text/html");
+
+    // styles are scoped to #ccerp-lp / #ccerp-sc, so both sets can live together
+    doc.querySelectorAll("head style, head link").forEach(function (n) {
+      document.head.appendChild(n.cloneNode(true));
+    });
+
+    var box = document.createElement("div");
+    box.className = "ccerp-view";
+    Array.prototype.slice.call(doc.body.childNodes).forEach(function (n) {
+      if (n.nodeName === "SCRIPT") return;
+      box.appendChild(document.importNode(n, true));
+    });
+    root.appendChild(box);
+    views[name] = box;
+
+    // scripts injected as markup never run — they have to be re-created.
+    // Everything depends on this: the 15 questions, the scoring, the lead
+    // gate and the 43-field webhook post to GoHighLevel.
+    doc.querySelectorAll("body script").forEach(function (old) {
+      var s = document.createElement("script");
+      if (old.src) { s.src = old.src; } else { s.textContent = old.textContent; }
+      document.body.appendChild(s);
+    });
+
+    if (name === "landing") wireLanding(box);
+    if (name === "scorecard") wireScorecard(box);
+    return box;
+  }
+
+  /* every CTA on the landing page routes to the scorecard, including the one
+     that still carries an absolute URL in the file */
+  function wireLanding(box) {
+    box.querySelectorAll('a[data-cta], a[href="#scorecard"]').forEach(function (a) {
+      a.setAttribute("href", "#scorecard");
+      a.removeAttribute("target");
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        if (location.hash !== "#scorecard") { location.hash = "scorecard"; } else { route(); }
+      });
+    });
+  }
+
+  /* a way back, and no dead buttons on the result panel */
+  function wireScorecard(box) {
+    var back = document.createElement("div");
+    back.style.cssText = "max-width:800px;margin:0 auto;padding:18px 20px 0;font:600 13.5px/1.4 Inter,Arial,sans-serif";
+    back.innerHTML = '<a href="#landing" style="color:#0A6FAF;text-decoration:none">&larr; Back</a>';
+    box.insertBefore(back, box.firstChild);
+
+    // The trial and demo URLs do not exist yet, so those two result buttons
+    // would render as links to nowhere. Hide them until the URLs are set.
+    setTimeout(function () {
+      function dead(el) { if (!el) return true; var h = el.getAttribute("href"); return !h || h === "#"; }
+      var t = document.getElementById("ctaTrial"), d = document.getElementById("ctaDemo");
+      if (t && dead(t)) t.style.display = "none";
+      if (d && dead(d)) d.style.display = "none";
+      var row = box.querySelector(".ctarow");
+      if (row && dead(t) && dead(d)) row.style.display = "none";
+    }, 0);
+  }
+
+  function show(name) {
+    Object.keys(views).forEach(function (k) { views[k].hidden = (k !== name); });
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
+  var loading = {};
+  function route() {
+    var name = (location.hash || "").replace(/^#/, "") === "scorecard" ? "scorecard" : "landing";
+    if (views[name]) { show(name); return; }
+    if (loading[name]) return;
+    loading[name] = true;
+    fetchFirst(sources(PAGES[name]))
+      .then(function (html) {
+        if (boot && boot.parentNode) { boot.parentNode.removeChild(boot); }
+        build(name, html);
+        show(name);
+      })
+      .catch(function (e) {
+        if (boot) boot.innerHTML = "This page did not load. Please refresh to try again.";
+        if (window.console) console.error("CCERP loader:", e);
+      })
+      .then(function () { loading[name] = false; });
+  }
+
+  window.addEventListener("hashchange", route);
+  route();
+})();
+</script>
